@@ -1,0 +1,1 @@
+{"description":"Independent prototype of a generative video job console: job queue, simulated worker, cost estimation. Not affiliated with Runway. No video is generated.","engines":{"node":">=22.6"},"license":"MIT","name":"runway-generative-video-job-console","scripts":{"start":"node src/server.ts","test":"node --test tests/*.test.ts"},"type":"module","version":"0.1.0"}

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generative Video Job Console (Simulated Prototype)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #0d0f14; color: #e8eaf0; }
+  .banner { background: #3a2b00; color: #ffd75e; padding: 10px 20px; font-size: 13px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 20px 60px; }
+  h1 { margin: 8px 0 4px; font-size: 26px; }
+  h2 { margin-top: 36px; font-size: 18px; border-bottom: 1px solid #2a2f3c; padding-bottom: 8px; }
+  .sub { color: #9aa3b5; font-size: 14px; }
+  form.card, .card { background: #171b25; border: 1px solid #2a2f3c; border-radius: 10px; padding: 18px; margin: 14px 0; }
+  label { display: block; font-size: 13px; color: #9aa3b5; margin: 10px 0 4px; }
+  input, select, textarea { width: 100%; padding: 9px 10px; border-radius: 6px; border: 1px solid #2a2f3c; background: #0d0f14; color: #e8eaf0; font-size: 14px; }
+  textarea { min-height: 64px; resize: vertical; }
+  .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  button { background: #5b6cff; color: #fff; border: 0; border-radius: 6px; padding: 9px 16px; font-size: 14px; cursor: pointer; }
+  button:hover { background: #4a5be0; }
+  button.ghost { background: transparent; border: 1px solid #2a2f3c; color: #c7cddb; }
+  button.danger { background: #a0342f; }
+  button.small { padding: 5px 10px; font-size: 12px; }
+  .est { margin-top: 12px; font-size: 14px; color: #9aa3b5; }
+  .est strong { color: #ffd75e; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #2a2f3c; vertical-align: top; }
+  th { color: #9aa3b5; font-weight: 600; }
+  .bar { height: 8px; background: #0d0f14; border-radius: 4px; overflow: hidden; min-width: 90px; }
+  .bar > div { height: 100%; background: #5b6cff; transition: width 0.4s; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .queued { background: #2b3446; color: #9fb2d8; }
+  .processing { background: #12345e; color: #7db4ff; }
+  .completed { background: #123f2a; color: #6fe3a1; }
+  .failed { background: #5e1a16; color: #ff8f86; }
+  .cancelled { background: #3c3c46; color: #b9b9c7; }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+  .frame { aspect-ratio: 16/9; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 11px; letter-spacing: 1px; color: rgba(255,255,255,.75); font-weight: 700; }
+  .gcard { background: #171b25; border: 1px solid #2a2f3c; border-radius: 10px; overflow: hidden; }
+  .gcard .meta { padding: 10px 12px; font-size: 12px; color: #9aa3b5; }
+  .gcard .meta p { margin: 4px 0; }
+  .toggle { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #9aa3b5; }
+  .err { color: #ff8f86; font-size: 13px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="banner">SIMULATED PROTOTYPE. Independent, not affiliated with Runway. No video is generated; renders and outputs are synthetic.</div>
+<div class="wrap">
+  <h1>Generative Video Job Console</h1>
+  <p class="sub">Submit generation jobs, watch the queue work through them, cancel or retry, and review completed renders in the gallery. All rendering is simulated; what is real is the queue state machine, cost estimation, and API.</p>
+
+  <h2>New job</h2>
+  <form class="card" id="jobForm">
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" maxlength="500" placeholder="A drone shot over a foggy coastline at dawn" required></textarea>
+    <div class="row">
+      <div>
+        <label for="duration">Duration (seconds, 1-120)</label>
+        <input id="duration" type="number" min="1" max="120" value="5" required>
+      </div>
+      <div>
+        <label for="aspect">Aspect ratio</label>
+        <select id="aspect"></select>
+      </div>
+      <div>
+        <label for="model">Model</label>
+        <select id="model"></select>
+      </div>
+    </div>
+    <div class="est">Estimated cost: <strong id="estCost">-</strong> <span class="sub">(updates as you change duration/model)</span></div>
+    <div style="margin-top:12px"><button type="submit">Submit job</button></div>
+    <div class="err" id="formErr"></div>
+  </form>
+
+  <h2>Queue</h2>
+  <div class="card toggle">
+    <input type="checkbox" id="failNext" style="width:auto">
+    <label for="failNext" style="margin:0">Simulate a render failure on the next job that finishes (to demo retry)</label>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Job</th><th>Model</th><th>Status</th><th>Progress</th><th>Credits</th><th>Attempt</th><th>Actions</th></tr></thead>
+      <tbody id="jobRows"></tbody>
+    </table>
+  </div>
+
+  <h2>Gallery <span class="sub">(completed jobs; thumbnails are styled placeholders, clearly simulated)</span></h2>
+  <div class="gallery" id="gallery"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let models = [], aspects = [];
+
+async function loadMeta() {
+  const r = await fetch('/api/models');
+  const data = await r.json();
+  models = data.models; aspects = data.aspectRatios;
+  $('aspect').innerHTML = aspects.map(a => `<option>${a}</option>`).join('');
+  $('model').innerHTML = models.map(m => `<option value="${m.id}">${m.name} (${m.creditsPerSecond} cr/s)</option>`).join('');
+  updateEst();
+}
+function updateEst() {
+  const m = models.find(x => x.id === $('model').value);
+  const d = Number($('duration').value) || 0;
+  $('estCost').textContent = m ? Math.ceil(d * m.creditsPerSecond) + ' credits' : '-';
+}
+['duration','model'].forEach(id => $(id).addEventListener('input', updateEst));
+
+$('jobForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('formErr').textContent = '';
+  const body = { prompt: $('prompt').value, durationSeconds: Number($('duration').value), aspectRatio: $('aspect').value, model: $('model').value };
+  const r = await fetch('/api/jobs', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const data = await r.json();
+  if (!r.ok) { $('formErr').textContent = data.error || 'Submit failed'; return; }
+  $('prompt').value = '';
+  await refresh();
+});
+
+$('failNext').addEventListener('change', async () => {
+  await fetch('/api/failure', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ enabled: $('failNext').checked }) });
+});
+
+async function action(id, name) {
+  const r = await fetch(`/api/jobs/${id}/${name}`, { method: 'POST' });
+  const data = await r.json();
+  if (!r.ok) alert(data.error || 'Action failed');
+  await refresh();
+}
+
+const gradients = [
+  'linear-gradient(135deg,#5b6cff,#9b5bff)', 'linear-gradient(135deg,#ff7a5b,#ffb35b)',
+  'linear-gradient(135deg,#2fbf71,#7be3a8)', 'linear-gradient(135deg,#2fa3bf,#7bd8e3)',
+  'linear-gradient(135deg,#bf2f7a,#e37bd0)', 'linear-gradient(135deg,#7a7fbf,#b0b5ff)'
+];
+
+function frame(job, i) {
+  const g = gradients[i % gradients.length];
+  const ratio = job.aspectRatio === '16:9' ? '16/9' : job.aspectRatio === '9:16' ? '9/16' : job.aspectRatio === '1:1' ? '1/1' : '4/3';
+  return `<div class="frame" style="background:${g};aspect-ratio:${ratio}">SIMULATED OUTPUT</div>`;
+}
+
+function pill(s) { return `<span class="pill ${s}">${s}</span>`; }
+
+async function refresh() {
+  const r = await fetch('/api/jobs');
+  const { jobs } = await r.json();
+  const active = jobs.filter(j => j.status !== 'completed');
+  $('jobRows').innerHTML = active.map(j => `
+    <tr>
+      <td><code>${j.id.slice(0,8)}</code><br><span class="sub">${escapeHtml(j.prompt.slice(0,60))}${j.prompt.length>60?'...':''}</span>${j.error?`<br><span class="err">${escapeHtml(j.error)}</span>`:''}</td>
+      <td>${j.modelName}<br><span class="sub">${j.aspectRatio} - ${j.durationSeconds}s</span></td>
+      <td>${pill(j.status)}</td>
+      <td><div class="bar"><div style="width:${Math.round(j.progress*100)}%"></div></div></td>
+      <td>${j.creditsEstimated}</td>
+      <td>${j.attempt}/3</td>
+      <td>
+        ${(j.status==='queued'||j.status==='processing') ? `<button class="small danger" onclick="action('${j.id}','cancel')">Cancel</button>` : ''}
+        ${(j.status==='failed'||j.status==='cancelled') ? `<button class="small ghost" onclick="action('${j.id}','retry')">Retry</button>` : ''}
+      </td>
+    </tr>`).join('') || '<tr><td colspan="7" class="sub">No active jobs. Submit one above.</td></tr>';
+
+  const done = jobs.filter(j => j.status === 'completed');
+  $('gallery').innerHTML = done.map((j, i) => `
+    <div class="gcard">${frame(j,i)}
+      <div class="meta">
+        <p><strong style="color:#e8eaf0">${escapeHtml(j.prompt.slice(0,80))}${j.prompt.length>80?'...':''}</strong></p>
+        <p>${j.modelName} - ${j.aspectRatio} - ${j.durationSeconds}s - ${j.creditsEstimated} credits</p>
+        <p>SIMULATED placeholder render. No video was generated.</p>
+      </div>
+    </div>`).join('') || '<p class="sub">No completed jobs yet.</p>';
+
+  const f = await (await fetch('/api/failure')).json();
+  if ($('failNext').checked !== f.failNext) $('failNext').checked = f.failNext;
+}
+
+function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+loadMeta().then(refresh);
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>
